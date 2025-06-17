@@ -1,0 +1,50 @@
+{% extends "_layout.html" %}
+
+{%- block title -%}{{title}}{%- endblock -%}
+
+{%- block headermisc -%}
+  <link rel="prefetch" href="/browse?offset={{offset|urlencode}}&bucket={{bucket|urlencode}}&prefix={{prefix_str|urlencode}}">
+{%- endblock -%}
+
+{%- block content -%}
+<div id="top">
+</div>
+<main>
+  {% call article_nav(prefix_str,bucket) %}
+  <article>
+    {% for item in items %}
+      {% call render_item(item) %}
+    {% endfor %}
+  </article>
+  {% call article_nav(prefix_str,bucket) %} 
+</main>
+{%- endblock -%}
+
+{% macro article_nav(prefix_str,bucket) %}
+<div class="articlenav">
+  <a href="/browse?bucket={{bucket|urlencode}}&prefix={{prefix_str|urlencode}}&offset={{prev_offset}}">Prev</a>
+  <form class="navform" action="/browse" method="GET">
+  <input type="text" name="bucket" placeholder="{{bucket}}" value="{{bucket}}">
+  /
+  <input type="text" name="prefix" placeholder="{{prefix_str}}" value="{{prefix_str}}">
+  <input type="submit" style="display: none">
+  </form>
+  <a href="/browse?bucket={{bucket|urlencode}}&prefix={{prefix_str|urlencode}}&offset={{offset}}">Next</a>
+</div>
+{% endmacro %}
+
+{% macro render_item(item) %}
+  {%- match item.content_type -%}
+    {%- when ContentType::Text -%}
+      <a href="{{item.link|e}}">{{item.link}}</a>
+    {%- when ContentType::Image -%}
+      <img src="{{item.link|e}}"/>
+    {%- when ContentType::Video -%}
+      <video preload="metadata">
+        <source src="{{item.link|e}}#t=0.5">
+      </video>
+    {%- when ContentType::Archive -%}
+      <a href="{{item.link|e}}">{{item.link}}</a>
+  {%- endmatch -%}
+{% endmacro %}
+

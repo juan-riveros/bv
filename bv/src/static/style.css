@@ -1,0 +1,74 @@
+:root {
+  --base: #1e1e2e;
+  --text: #cdd6f4;
+  --surf0: #313244;
+  --high: #fab387;
+  --visited: #f9e2af;
+}
+
+
+html,body {
+  background-color: var(--base);
+  color: var(--text);
+  padding: 0;
+  margin: 0;
+  width: 100%;
+  height: 100%;
+}
+
+main {
+  margin: 0 auto;
+  width: 100%;
+}
+
+#top {
+  margin: .3em auto;
+  width: 100%;
+}
+
+article {
+  background-color: var(--surf0);
+  gap: 0px;
+  display:grid;
+  grid-template-columns: repeat(auto-fill, minmax(450px,15%));
+  grid-template-rows: repeat(auto-fit, minmax(10%, 450px));
+  justify-content: center;
+  gap: 3rem;
+}
+
+article > * {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  overflow: hidden;
+}
+
+article > a {
+  display: inline flow-root;
+}
+
+a {
+  color: var(--high);
+}
+
+a:visited {
+  color: var(--visited);
+}
+
+.articlenav {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-around;
+  margin: .3em auto;
+  padding: .3em auto;
+  position: sticky;
+  top: 0;
+  background-color: var(--base);
+}
+
+.navform > input {
+  background-color: var(--bg);
+  color: var(--text);
+  border: none;
+  width: min-content;
+}
