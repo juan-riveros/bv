@@ -14,6 +14,9 @@ use once_cell::sync::Lazy;
 use opendal::EntryMode;
 use serde::Deserialize;
 use std::collections::BTreeMap;
+use std::convert::Infallible;
+use std::fmt::Debug;
+use std::str::FromStr;
 use tokio::signal;
 use tower_http::trace::{self, TraceLayer};
 use tracing_subscriber::EnvFilter;
@@ -37,7 +40,7 @@ async fn reload_cache() {
             .endpoint(&config.endpoint)
             .http_client(client)
             .access_key_id(&config.access_key_id)
-            .secret_access_key(&config.secret_access_key)
+            .secret_access_key(&config.secret_access_key.0)
             .region(&config.region);
 
         let dal = opendal::Operator::new(op)
@@ -87,6 +90,24 @@ async fn reindex() -> impl IntoResponse {
     reload_cache().await;
     StatusCode::OK
 }
+
+#[derive(Clone)]
+struct Secret(String);
+
+impl FromStr for Secret {
+    type Err = Infallible;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Secret(s.into()))
+    }
+}
+
+impl Debug for Secret {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "REDACTED")
+    }
+}
+
 #[derive(Envconfig, Clone, Debug)]
 struct Config {
     #[envconfig(from = "PAGE_SIZE")]
@@ -105,7 +126,7 @@ struct Config {
     #[envconfig(from = "ACCESS_KEY_ID")]
     access_key_id: String,
     #[envconfig(from = "SECRET_ACCESS_KEY")]
-    secret_access_key: String,
+    secret_access_key: Secret,
 }
 
 #[derive(
