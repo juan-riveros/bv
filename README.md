@@ -1,5 +1,7 @@
 # bucket viewer
 
+> This is a hacky project I've thrown together and modified as needed and is likely several commits behind my personal internal copy.
+
 `bucket-viewer` (bv) is a webapp for viewing object storage as a paginated gallery. 
 
 ## Installation
