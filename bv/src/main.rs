@@ -17,6 +17,7 @@ use std::collections::BTreeMap;
 use std::convert::Infallible;
 use std::fmt::Debug;
 use std::str::FromStr;
+use std::time::Duration;
 use tokio::signal;
 use tower_http::trace::{self, TraceLayer};
 use tracing_subscriber::EnvFilter;
@@ -27,31 +28,38 @@ static CACHE: Lazy<ArcSwap<BTreeMap<String, Item>>> =
 static CONFIG: Lazy<ArcSwap<Config>> =
     Lazy::new(|| ArcSwap::from_pointee(Config::init_from_env().unwrap()));
 
+static ACTIVE_BUCKET: Lazy<ArcSwap<String>> = Lazy::new(|| ArcSwap::from_pointee(String::new()));
+
 async fn reload_cache() {
     let config = CONFIG.load();
 
     let mut cache = BTreeMap::new();
 
     for bucket in config.buckets.split(',') {
-        let client = opendal::raw::HttpClient::with(reqwest::Client::new());
+        // let client = opendal::raw::HttpClient::with(reqwest::Client::new());
         let op = opendal::services::S3::default()
+            .disable_config_load()
             .root("/")
             .bucket(bucket)
             .endpoint(&config.endpoint)
-            .http_client(client)
+            // .http_client(client)
             .access_key_id(&config.access_key_id)
             .secret_access_key(&config.secret_access_key.0)
             .region(&config.region);
 
         let dal = opendal::Operator::new(op)
             .expect("successfully replace OpenDAL bucket")
+            .layer(opendal::layers::ThrottleLayer::new(
+                10 * 1024 * 1024,
+                512 * 1024 * 1024,
+            ))
             .finish();
         let lister = dal.lister_with("");
 
         let items: Vec<Item> = lister
             .recursive(true)
             .await
-            .expect("failure")
+            .expect("async lister initation")
             .filter_map(move |e| async {
                 debug!("{:?}", e);
                 let Ok(e) = e else { return None };
@@ -62,7 +70,13 @@ async fn reload_cache() {
             })
             .filter_map(|(path, _metadata)| async {
                 Some(Item {
-                    link: format!("{}/{}/{}", config.endpoint, bucket, path),
+                    link: {
+                        dal.presign_read(&path, Duration::from_secs(60 * 60))
+                            .await
+                            .expect("generate presigned url")
+                            .uri()
+                            .to_string()
+                    },
                     path: path.clone(),
                     content_type: {
                         match mime_guess::from_path(path).first() {
@@ -82,13 +96,15 @@ async fn reload_cache() {
         for item in items.clone() {
             cache.insert(format!("{}/{}", bucket, item.path), item.clone());
         }
+        ACTIVE_BUCKET.store(std::sync::Arc::new(bucket.to_owned()));
     }
     CACHE.store(std::sync::Arc::new(cache));
 }
 
 async fn reindex() -> impl IntoResponse {
     reload_cache().await;
-    StatusCode::OK
+    let active_bucket = ACTIVE_BUCKET.load();
+    Redirect::temporary(&format!("/browse?bucket={active_bucket}&prefix="))
 }
 
 #[derive(Clone)]
@@ -142,7 +158,10 @@ async fn style_include() -> impl IntoResponse {
     axum::response::Response::builder()
         .status(StatusCode::OK)
         .header("Content-Type", "text/css")
-        .body(axum::body::Body::from(include_str!("./static/style.css")))
+        .body(axum::body::Body::from(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/static/style.css"
+        ))))
         .unwrap()
 }
 
@@ -169,6 +188,20 @@ async fn query(Query(q): Query<QueryQuery>) -> impl IntoResponse {
         reload_cache().await;
     };
 
+    let tot_len = {
+        let cache = CACHE.load();
+        let prefix_str = format!("{}/{}", q.bucket, q.prefix);
+        let result = cache
+            .range((
+                std::ops::Bound::Included(prefix_str.clone()),
+                match prefix_range::upper_bound_from_prefix(&prefix_str) {
+                    Some(bound) => std::ops::Bound::Excluded(bound),
+                    None => std::ops::Bound::Unbounded,
+                },
+            ))
+            .count();
+        result
+    };
     let items = {
         let cache = CACHE.load();
         let prefix_str = format!("{}/{}", q.bucket, q.prefix);
@@ -180,6 +213,7 @@ async fn query(Query(q): Query<QueryQuery>) -> impl IntoResponse {
                     None => std::ops::Bound::Unbounded,
                 },
             ))
+            .rev()
             .skip(offset as usize)
             .take(config.page_size as usize)
             .map(|(_k, v)| v.clone())
@@ -187,17 +221,27 @@ async fn query(Query(q): Query<QueryQuery>) -> impl IntoResponse {
         info!("results for {}/{}: {}", q.bucket, q.prefix, result.len());
         result
     };
+
     debug!("{:?}", items);
     let view = bv_templates::Browse {
-        title: format!("{}/{}", q.bucket, q.prefix),
+        title: format!(
+            "{}/{} - {}..{}/{}",
+            q.bucket,
+            q.prefix,
+            offset,
+            offset + items.len() as u64,
+            tot_len
+        ),
         bucket: q.bucket,
         prefix_str: q.prefix,
         prev_offset: u64::saturating_sub(offset, config.page_size as u64),
-        offset: if items.len() < config.page_size as usize {
+        offset: Some(if items.len() < config.page_size as usize {
+            offset
+        } else if (items.len() + offset as usize) == tot_len {
             offset
         } else {
-            offset + config.page_size as u64
-        },
+            u64::saturating_add(offset, config.page_size as u64)
+        }),
         items,
     };
     axum::response::Html(view.to_string())
@@ -213,6 +257,8 @@ async fn main() {
         )
         .init();
 
+    let config = CONFIG.load();
+    println!("{:?}", config);
     tokio::spawn(async {
         reload_cache().await;
     });
@@ -221,10 +267,8 @@ async fn main() {
         .make_span_with(trace::DefaultMakeSpan::new().level(tracing::Level::DEBUG))
         .on_response(trace::DefaultOnResponse::new().level(tracing::Level::DEBUG));
     let app = Router::new()
-        .route(
-            "/",
-            get(|| async { Redirect::temporary("/browse?bucket=ai-art&prefix=") }),
-        )
+        // .route("/", get(|| async { Redirect::temporary("/browse") }))
+        .route("/", get(reindex))
         .route("/browse", get(query))
         .route("/browse", post(query))
         .route("/reindex", get(reindex))
@@ -232,8 +276,6 @@ async fn main() {
         // .nest_service("/static", ServeDir::new("static"))
         .layer(trace_layer);
 
-    let config = CONFIG.load();
-    println!("{:?}", config);
     let listener = tokio::net::TcpListener::bind(format!("{}:{}", config.addr, config.port))
         .await
         .ok()

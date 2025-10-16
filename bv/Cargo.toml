@@ -8,9 +8,9 @@ askama = { version = "^0", features = ["serde-json", "serde-yaml", "with-axum", 
 axum = { version = "0.8.1", features = ["http2", "ws", "multipart", "macros"] }
 envconfig = "0.11.0"
 log = "0.4.26"
-opendal = { version = "0.52.0", features = ["services-s3"] }
+opendal = { version = "0.54.0", features = ["layers-throttle", "services-s3"] }
 serde = { version = "1.0.219", features = ["derive", "rc"] }
-bv_templates = { version = "0.1.0", path = "../bv_templates" }
+bv_templates = { version = "0.1.1", path = "../bv_templates" }
 tokio = { version = "1.44.1", features = ["full"] }
 tower = { version = "0.5.2", features = ["buffer", "slab", "timeout", "tokio", "tracing", "util"] }
 tower-http = { version = "0.6.2", features = ["fs", "trace"] }

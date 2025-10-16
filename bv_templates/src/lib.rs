@@ -37,7 +37,7 @@ pub struct Browse {
     pub bucket: String,
     pub prefix_str: String,
     pub items: Vec<Item>,
-    pub offset: u64,
+    pub offset: Option<u64>,
     pub prev_offset: u64,
     // pub prev_idx: Option<String>,
     // pub next_idx: Option<String>,

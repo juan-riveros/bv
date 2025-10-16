@@ -3,7 +3,11 @@
 {%- block title -%}{{title}}{%- endblock -%}
 
 {%- block headermisc -%}
+  {% match offset %}
+  {% when Some with (offset) %}
   <link rel="prefetch" href="/browse?offset={{offset|urlencode}}&bucket={{bucket|urlencode}}&prefix={{prefix_str|urlencode}}">
+  {% else %}
+  {% endmatch %}
 {%- endblock -%}
 
 {%- block content -%}
@@ -29,7 +33,12 @@
   <input type="text" name="prefix" placeholder="{{prefix_str}}" value="{{prefix_str}}">
   <input type="submit" style="display: none">
   </form>
+  {% match offset %}
+    {% when Some with (offset) %}
   <a href="/browse?bucket={{bucket|urlencode}}&prefix={{prefix_str|urlencode}}&offset={{offset}}">Next</a>
+    {% else %}
+  <span>Next</span>
+    {% endmatch %}
 </div>
 {% endmacro %}
 
